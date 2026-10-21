@@ -1,0 +1,4 @@
+rootProject.name = 'desafio-conta-corrente'
+
+include 'conta-corrente-domain'
+include 'conta-corrente-api'
