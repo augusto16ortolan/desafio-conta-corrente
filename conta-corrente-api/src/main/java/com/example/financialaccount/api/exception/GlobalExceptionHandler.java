@@ -4,7 +4,9 @@ import com.example.financialaccount.domain.exception.AccountNotFoundException;
 import com.example.financialaccount.domain.exception.AccountNumberGenerationException;
 import com.example.financialaccount.domain.exception.DuplicateIdentityNumberException;
 import com.example.financialaccount.domain.exception.InsufficientBalanceException;
+import com.example.financialaccount.domain.exception.IdempotencyKeyConflictException;
 import java.time.Instant;
+import org.springframework.dao.TransientDataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -21,6 +23,11 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.CONFLICT, exception);
     }
 
+    @ExceptionHandler(IdempotencyKeyConflictException.class)
+    ResponseEntity<ApiErrorResponse> handleIdempotencyKeyConflict(IdempotencyKeyConflictException exception) {
+        return error(HttpStatus.CONFLICT, exception);
+    }
+
     @ExceptionHandler(AccountNotFoundException.class)
     ResponseEntity<ApiErrorResponse> handleAccountNotFound(AccountNotFoundException exception) {
         return error(HttpStatus.NOT_FOUND, exception);
@@ -33,6 +40,11 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(AccountNumberGenerationException.class)
     ResponseEntity<ApiErrorResponse> handleAccountNumberGeneration(AccountNumberGenerationException exception) {
+        return error(HttpStatus.SERVICE_UNAVAILABLE, exception);
+    }
+
+    @ExceptionHandler(TransientDataAccessException.class)
+    ResponseEntity<ApiErrorResponse> handleTransientPersistenceFailure(TransientDataAccessException exception) {
         return error(HttpStatus.SERVICE_UNAVAILABLE, exception);
     }
 

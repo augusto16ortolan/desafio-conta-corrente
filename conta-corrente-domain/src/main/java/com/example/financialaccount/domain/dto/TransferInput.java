@@ -1,5 +1,6 @@
 package com.example.financialaccount.domain.dto;
 
+import com.example.financialaccount.domain.idempotency.IdempotencyKey;
 import com.example.financialaccount.domain.money.MonetaryAmount;
 import java.util.Objects;
 import java.util.UUID;
@@ -14,6 +15,6 @@ public record TransferInput(
         Objects.requireNonNull(sourceAccountId, "A conta de origem é obrigatória.");
         Objects.requireNonNull(destinationAccountId, "A conta de destino é obrigatória.");
         Objects.requireNonNull(amount, "O valor da transferência é obrigatório.");
-        Objects.requireNonNull(idempotencyKey, "A chave de idempotência é obrigatória.");
+        idempotencyKey = new IdempotencyKey(idempotencyKey).value();
     }
 }

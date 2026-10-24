@@ -1,6 +1,7 @@
 package com.example.financialaccount.domain.movement;
 
 import com.example.financialaccount.domain.account.Account;
+import com.example.financialaccount.domain.idempotency.IdempotencyKey;
 import com.example.financialaccount.domain.money.MonetaryAmount;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -63,7 +64,7 @@ public class AccountMovement {
         this.type = Objects.requireNonNull(type, "O tipo de movimentação é obrigatório.");
         this.amount = Objects.requireNonNull(amount, "O valor é obrigatório.").value();
         this.balanceAfter = account.getBalance();
-        this.idempotencyKey = validateIdempotencyKey(idempotencyKey);
+        this.idempotencyKey = new IdempotencyKey(idempotencyKey).value();
         this.transferReference = transferReference;
         this.occurredAt = Instant.now();
     }
@@ -86,21 +87,6 @@ public class AccountMovement {
                 amount,
                 "transfer-credit-" + transferReference,
                 transferReference);
-    }
-
-    private String validateIdempotencyKey(String idempotencyKey) {
-        Objects.requireNonNull(idempotencyKey, "A chave de idempotência é obrigatória.");
-        var normalizedKey = idempotencyKey.trim();
-
-        if (normalizedKey.isEmpty()) {
-            throw new IllegalArgumentException("A chave de idempotência é obrigatória.");
-        }
-
-        if (normalizedKey.length() > 100) {
-            throw new IllegalArgumentException("A chave de idempotência deve ter no máximo 100 caracteres.");
-        }
-
-        return normalizedKey;
     }
 
     @PrePersist

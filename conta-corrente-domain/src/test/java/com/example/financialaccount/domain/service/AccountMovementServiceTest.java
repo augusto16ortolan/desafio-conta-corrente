@@ -1,7 +1,6 @@
 package com.example.financialaccount.domain.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
@@ -14,6 +13,7 @@ import com.example.financialaccount.domain.account.AccountNumber;
 import com.example.financialaccount.domain.dto.RegisterMovementInput;
 import com.example.financialaccount.domain.exception.AccountNotFoundException;
 import com.example.financialaccount.domain.exception.InsufficientBalanceException;
+import com.example.financialaccount.domain.exception.IdempotencyKeyConflictException;
 import com.example.financialaccount.domain.identitynumber.IdentityNumber;
 import com.example.financialaccount.domain.money.MonetaryAmount;
 import com.example.financialaccount.domain.movement.AccountMovement;
@@ -47,7 +47,7 @@ class AccountMovementServiceTest {
 
     @Test
     void depositsAndRegistersMovement() {
-        var account = accountWithBalance("10.00");
+        var account = accountWithBalance();
         var input = input(account.getId(), "deposit-1", "15.00");
         when(accountMovementRepository.findByAccountIdAndIdempotencyKey(account.getId(), "deposit-1"))
                 .thenReturn(Optional.empty());
@@ -65,7 +65,7 @@ class AccountMovementServiceTest {
 
     @Test
     void returnsExistingMovementForRepeatedIdempotencyKey() {
-        var account = accountWithBalance("10.00");
+        var account = accountWithBalance();
         var existingMovement = AccountMovement.register(
                 account, MovementType.DEPOSIT, new MonetaryAmount(new BigDecimal("5.00")), "deposit-1");
         when(accountMovementRepository.findByAccountIdAndIdempotencyKey(account.getId(), "deposit-1"))
@@ -80,8 +80,24 @@ class AccountMovementServiceTest {
     }
 
     @Test
+    void rejectsReusedIdempotencyKeyWithDifferentAmount() {
+        var account = accountWithBalance();
+        var existingMovement = AccountMovement.register(
+                account, MovementType.DEPOSIT, new MonetaryAmount(new BigDecimal("5.00")), "deposit-1");
+        when(accountMovementRepository.findByAccountIdAndIdempotencyKey(account.getId(), "deposit-1"))
+                .thenReturn(Optional.of(existingMovement));
+
+        assertThrows(
+                IdempotencyKeyConflictException.class,
+                () -> accountMovementService.deposit(input(account.getId(), "deposit-1", "6.00")));
+
+        verifyNoInteractions(accountRepository);
+        verify(accountMovementRepository, never()).save(any());
+    }
+
+    @Test
     void rejectsWithdrawalWithoutSufficientBalance() {
-        var account = accountWithBalance("10.00");
+        var account = accountWithBalance();
         var input = input(account.getId(), "withdrawal-1", "10.01");
         when(accountMovementRepository.findByAccountIdAndIdempotencyKey(account.getId(), "withdrawal-1"))
                 .thenReturn(Optional.empty());
@@ -106,10 +122,10 @@ class AccountMovementServiceTest {
         verify(accountMovementRepository, never()).save(any());
     }
 
-    private Account accountWithBalance(String balance) {
+    private Account accountWithBalance() {
         var account = Account.open(
                 IdentityNumber.from("529.982.247-25"), AccountNumber.from("0000000001"));
-        account.deposit(new BigDecimal(balance));
+        account.deposit(new BigDecimal("10.00"));
         return account;
     }
 

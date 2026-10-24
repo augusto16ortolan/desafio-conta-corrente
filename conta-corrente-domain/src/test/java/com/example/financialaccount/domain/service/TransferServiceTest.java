@@ -13,6 +13,7 @@ import com.example.financialaccount.domain.account.AccountNumber;
 import com.example.financialaccount.domain.dto.TransferInput;
 import com.example.financialaccount.domain.exception.AccountNotFoundException;
 import com.example.financialaccount.domain.exception.InsufficientBalanceException;
+import com.example.financialaccount.domain.exception.IdempotencyKeyConflictException;
 import com.example.financialaccount.domain.identitynumber.IdentityNumber;
 import com.example.financialaccount.domain.money.MonetaryAmount;
 import com.example.financialaccount.domain.movement.AccountMovement;
@@ -48,7 +49,7 @@ class TransferServiceTest {
     void transfersAmountBetweenAccountsAndRegistersBothMovements() {
         var sourceAccount = accountWithBalance("100.00");
         var destinationAccount = account("111.444.777-35", "0000000002");
-        var input = input(sourceAccount.getId(), destinationAccount.getId(), "transfer-1", "40.00");
+        var input = input(sourceAccount.getId(), destinationAccount.getId(), "40.00");
         when(accountMovementRepository.findByAccountIdAndIdempotencyKey(sourceAccount.getId(), "transfer-1"))
                 .thenReturn(Optional.empty());
         when(accountRepository.findAllByIdInForUpdate(any())).thenReturn(List.of(sourceAccount, destinationAccount));
@@ -75,7 +76,7 @@ class TransferServiceTest {
                 .thenReturn(Optional.of(debit));
         when(accountMovementRepository.findAllByTransferReference(reference)).thenReturn(List.of(debit, credit));
 
-        var transfer = transferService.transfer(input(sourceAccount.getId(), destinationAccount.getId(), "transfer-1", "40.00"));
+        var transfer = transferService.transfer(input(sourceAccount.getId(), destinationAccount.getId(), "40.00"));
 
         assertEquals(reference, transfer.transferReference());
         assertEquals(debit.getId(), transfer.debitMovement().id());
@@ -85,10 +86,32 @@ class TransferServiceTest {
     }
 
     @Test
+    void rejectsReusedIdempotencyKeyWithDifferentDestinationAccount() {
+        var sourceAccount = accountWithBalance("60.00");
+        var originalDestinationAccount = account("111.444.777-35", "0000000002");
+        var newDestinationAccountId = UUID.randomUUID();
+        var reference = UUID.randomUUID();
+        var debit = AccountMovement.registerTransferDebit(
+                sourceAccount, new MonetaryAmount(new BigDecimal("40.00")), "transfer-1", reference);
+        var credit = AccountMovement.registerTransferCredit(
+                originalDestinationAccount, new MonetaryAmount(new BigDecimal("40.00")), reference);
+        when(accountMovementRepository.findByAccountIdAndIdempotencyKey(sourceAccount.getId(), "transfer-1"))
+                .thenReturn(Optional.of(debit));
+        when(accountMovementRepository.findAllByTransferReference(reference)).thenReturn(List.of(debit, credit));
+
+        assertThrows(
+                IdempotencyKeyConflictException.class,
+                () -> transferService.transfer(input(sourceAccount.getId(), newDestinationAccountId, "40.00")));
+
+        verifyNoInteractions(accountRepository);
+        verify(accountMovementRepository, never()).saveAll(any());
+    }
+
+    @Test
     void rejectsTransferWhenSourceAccountHasInsufficientBalance() {
         var sourceAccount = accountWithBalance("10.00");
         var destinationAccount = account("111.444.777-35", "0000000002");
-        var input = input(sourceAccount.getId(), destinationAccount.getId(), "transfer-1", "10.01");
+        var input = input(sourceAccount.getId(), destinationAccount.getId(), "10.01");
         when(accountMovementRepository.findByAccountIdAndIdempotencyKey(sourceAccount.getId(), "transfer-1"))
                 .thenReturn(Optional.empty());
         when(accountRepository.findAllByIdInForUpdate(any())).thenReturn(List.of(sourceAccount, destinationAccount));
@@ -104,7 +127,7 @@ class TransferServiceTest {
     void rejectsTransferWhenDestinationAccountDoesNotExist() {
         var sourceAccount = accountWithBalance("10.00");
         var destinationAccountId = UUID.randomUUID();
-        var input = input(sourceAccount.getId(), destinationAccountId, "transfer-1", "1.00");
+        var input = input(sourceAccount.getId(), destinationAccountId, "1.00");
         when(accountMovementRepository.findByAccountIdAndIdempotencyKey(sourceAccount.getId(), "transfer-1"))
                 .thenReturn(Optional.empty());
         when(accountRepository.findAllByIdInForUpdate(any())).thenReturn(List.of(sourceAccount));
@@ -121,7 +144,7 @@ class TransferServiceTest {
 
         assertThrows(
                 IllegalArgumentException.class,
-                () -> transferService.transfer(input(account.getId(), account.getId(), "transfer-1", "1.00")));
+                () -> transferService.transfer(input(account.getId(), account.getId(), "1.00")));
 
         verifyNoInteractions(accountRepository, accountMovementRepository);
     }
@@ -136,11 +159,11 @@ class TransferServiceTest {
         return Account.open(IdentityNumber.from(identityNumber), AccountNumber.from(accountNumber));
     }
 
-    private TransferInput input(UUID sourceAccountId, UUID destinationAccountId, String key, String amount) {
+    private TransferInput input(UUID sourceAccountId, UUID destinationAccountId, String amount) {
         return new TransferInput(
                 sourceAccountId,
                 destinationAccountId,
                 new MonetaryAmount(new BigDecimal(amount)),
-                key);
+                "transfer-1");
     }
 }

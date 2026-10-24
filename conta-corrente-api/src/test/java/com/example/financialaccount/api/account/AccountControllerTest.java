@@ -13,6 +13,7 @@ import com.example.financialaccount.domain.dto.AccountDto;
 import com.example.financialaccount.domain.dto.AccountMovementDto;
 import com.example.financialaccount.domain.dto.TransferDto;
 import com.example.financialaccount.domain.exception.DuplicateIdentityNumberException;
+import com.example.financialaccount.domain.exception.IdempotencyKeyConflictException;
 import com.example.financialaccount.domain.identitynumber.IdentityNumber;
 import com.example.financialaccount.domain.movement.MovementType;
 import com.example.financialaccount.domain.service.AccountMovementService;
@@ -113,6 +114,20 @@ class AccountControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.type").value("DEPOSIT"))
                 .andExpect(jsonPath("$.balanceAfter").value(15));
+    }
+
+    @Test
+    void returnsConflictWhenIdempotencyKeyIsReusedForAnotherOperation() throws Exception {
+        var accountId = UUID.randomUUID();
+        when(accountMovementService.deposit(any())).thenThrow(new IdempotencyKeyConflictException());
+
+        mockMvc.perform(post("/api/accounts/{accountId}/deposits", accountId)
+                        .header("Idempotency-Key", "deposit-1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\":15.00}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message")
+                        .value("A chave de idempotência já foi utilizada em uma operação diferente."));
     }
 
     @Test
