@@ -3,6 +3,7 @@ package com.example.financialaccount.api.account;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -17,6 +18,7 @@ import com.example.financialaccount.domain.movement.MovementType;
 import com.example.financialaccount.domain.service.AccountMovementService;
 import com.example.financialaccount.domain.service.AccountOpeningService;
 import com.example.financialaccount.domain.service.TransferService;
+import com.example.financialaccount.domain.service.StatementService;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
@@ -28,6 +30,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.data.web.PageableHandlerMethodArgumentResolver;
 
 @ExtendWith(MockitoExtension.class)
 class AccountControllerTest {
@@ -41,13 +44,18 @@ class AccountControllerTest {
     @Mock
     private TransferService transferService;
 
+    @Mock
+    private StatementService statementService;
+
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         mockMvc = MockMvcBuilders.standaloneSetup(
-                        new AccountController(accountOpeningService, accountMovementService, transferService))
+                        new AccountController(
+                                accountOpeningService, accountMovementService, transferService, statementService))
                 .setControllerAdvice(new GlobalExceptionHandler())
+                .setCustomArgumentResolvers(new PageableHandlerMethodArgumentResolver())
                 .build();
     }
 
@@ -137,5 +145,29 @@ class AccountControllerTest {
                 .andExpect(jsonPath("$.transferReference").value(transferReference.toString()))
                 .andExpect(jsonPath("$.debitMovement.type").value("TRANSFER_DEBIT"))
                 .andExpect(jsonPath("$.creditMovement.type").value("TRANSFER_CREDIT"));
+    }
+
+    @Test
+    void returnsStatementWithPaginationData() throws Exception {
+        var accountId = UUID.randomUUID();
+        when(statementService.getStatement(any())).thenReturn(new com.example.financialaccount.domain.dto.StatementDto(
+                accountId,
+                AccountNumber.from("0000000001"),
+                new BigDecimal("70.00"),
+                null,
+                null,
+                0,
+                20,
+                1,
+                1,
+                java.util.List.of()));
+
+        mockMvc.perform(get("/api/accounts/{accountId}/statement", accountId)
+                        .param("page", "0")
+                        .param("size", "20"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currentBalance").value(70))
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.movements").isEmpty());
     }
 }
