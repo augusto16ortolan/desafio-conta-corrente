@@ -18,6 +18,16 @@ conta-corrente-domain/  # entidades, repositórios, serviços, DTOs e regras de 
 conta-corrente-api/     # Spring Boot, controllers, requests, responses, mappers e exceções HTTP
 ```
 
+## Decisões de arquitetura
+
+A aplicação foi separada em dois módulos para manter as responsabilidades bem definidas. O módulo `conta-corrente-domain` concentra as entidades, regras de negócio, serviços, repositórios e migrations. Já o módulo `conta-corrente-api` fica responsável pela camada HTTP, incluindo controllers, requests, responses, mappers e tratamento de erros.
+
+Essa separação evita que regras de negócio dependam da API e facilita a evolução da aplicação, caso seja necessário expor os mesmos casos de uso por outro meio no futuro.
+
+O PostgreSQL foi utilizado pela consistência transacional e pelos mecanismos de concorrência necessários nas movimentações. As operações de saque e transferência usam transações, idempotência e bloqueio pessimista das contas envolvidas para evitar saldo incorreto ou lançamentos duplicados em acessos simultâneos.
+
+O Flyway mantém a evolução do banco versionada junto ao código. Para consulta de extratos, foram criados índices voltados às buscas mais frequentes por conta e data.
+
 ## Executar localmente
 
 1. Inicie o PostgreSQL:
