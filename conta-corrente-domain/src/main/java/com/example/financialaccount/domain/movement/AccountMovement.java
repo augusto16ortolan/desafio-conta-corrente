@@ -73,6 +73,21 @@ public class AccountMovement {
         return new AccountMovement(account, type, amount, idempotencyKey, null);
     }
 
+    public static AccountMovement registerTransferDebit(
+            Account account, MonetaryAmount amount, String idempotencyKey, UUID transferReference) {
+        return new AccountMovement(account, MovementType.TRANSFER_DEBIT, amount, idempotencyKey, transferReference);
+    }
+
+    public static AccountMovement registerTransferCredit(
+            Account account, MonetaryAmount amount, UUID transferReference) {
+        return new AccountMovement(
+                account,
+                MovementType.TRANSFER_CREDIT,
+                amount,
+                "transfer-credit-" + transferReference,
+                transferReference);
+    }
+
     private String validateIdempotencyKey(String idempotencyKey) {
         Objects.requireNonNull(idempotencyKey, "A chave de idempotência é obrigatória.");
         var normalizedKey = idempotencyKey.trim();

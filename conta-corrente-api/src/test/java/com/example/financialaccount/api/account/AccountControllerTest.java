@@ -10,11 +10,13 @@ import com.example.financialaccount.api.exception.GlobalExceptionHandler;
 import com.example.financialaccount.domain.account.AccountNumber;
 import com.example.financialaccount.domain.dto.AccountDto;
 import com.example.financialaccount.domain.dto.AccountMovementDto;
+import com.example.financialaccount.domain.dto.TransferDto;
 import com.example.financialaccount.domain.exception.DuplicateIdentityNumberException;
 import com.example.financialaccount.domain.identitynumber.IdentityNumber;
 import com.example.financialaccount.domain.movement.MovementType;
 import com.example.financialaccount.domain.service.AccountMovementService;
 import com.example.financialaccount.domain.service.AccountOpeningService;
+import com.example.financialaccount.domain.service.TransferService;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
@@ -36,11 +38,15 @@ class AccountControllerTest {
     @Mock
     private AccountMovementService accountMovementService;
 
+    @Mock
+    private TransferService transferService;
+
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.standaloneSetup(new AccountController(accountOpeningService, accountMovementService))
+        mockMvc = MockMvcBuilders.standaloneSetup(
+                        new AccountController(accountOpeningService, accountMovementService, transferService))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
     }
@@ -99,5 +105,37 @@ class AccountControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.type").value("DEPOSIT"))
                 .andExpect(jsonPath("$.balanceAfter").value(15));
+    }
+
+    @Test
+    void transfersBetweenAccounts() throws Exception {
+        var sourceAccountId = UUID.randomUUID();
+        var destinationAccountId = UUID.randomUUID();
+        var transferReference = UUID.randomUUID();
+        when(transferService.transfer(any())).thenReturn(new TransferDto(
+                transferReference,
+                new AccountMovementDto(
+                        UUID.randomUUID(),
+                        sourceAccountId,
+                        MovementType.TRANSFER_DEBIT,
+                        new BigDecimal("10.00"),
+                        new BigDecimal("90.00"),
+                        Instant.parse("2026-10-23T18:00:00Z")),
+                new AccountMovementDto(
+                        UUID.randomUUID(),
+                        destinationAccountId,
+                        MovementType.TRANSFER_CREDIT,
+                        new BigDecimal("10.00"),
+                        new BigDecimal("10.00"),
+                        Instant.parse("2026-10-23T18:00:00Z"))));
+
+        mockMvc.perform(post("/api/accounts/{accountId}/transfers", sourceAccountId)
+                        .header("Idempotency-Key", "transfer-1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"destinationAccountId\":\"" + destinationAccountId + "\",\"amount\":10.00}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.transferReference").value(transferReference.toString()))
+                .andExpect(jsonPath("$.debitMovement.type").value("TRANSFER_DEBIT"))
+                .andExpect(jsonPath("$.creditMovement.type").value("TRANSFER_CREDIT"));
     }
 }
