@@ -1,5 +1,6 @@
 package com.example.financialaccount.domain.account;
 
+import com.example.financialaccount.domain.exception.InsufficientBalanceException;
 import com.example.financialaccount.domain.identitynumber.IdentityNumber;
 import com.example.financialaccount.domain.identitynumber.IdentityNumberType;
 import jakarta.persistence.Column;
@@ -77,6 +78,21 @@ public class Account {
 
     public AccountNumber getAccountNumber() {
         return new AccountNumber(accountNumber, checkDigit);
+    }
+
+    public void deposit(BigDecimal amount) {
+        Objects.requireNonNull(amount, "O valor do depósito é obrigatório.");
+        balance = balance.add(amount);
+    }
+
+    public void withdraw(BigDecimal amount) {
+        Objects.requireNonNull(amount, "O valor do saque é obrigatório.");
+
+        if (balance.compareTo(amount) < 0) {
+            throw new InsufficientBalanceException();
+        }
+
+        balance = balance.subtract(amount);
     }
 
     @PrePersist
