@@ -20,14 +20,6 @@ conta-corrente-api/     # Spring Boot, controllers, requests, responses, mappers
 
 O módulo `conta-corrente-api` depende de `conta-corrente-domain`; a dependência inversa não é permitida.
 
-## Regras de negócio já definidas
-
-- Um CPF/CNPJ normalizado possui apenas uma conta.
-- O saldo inicial é zero; saque e transferência nunca podem gerar saldo negativo.
-- Valores monetários usam `BigDecimal` e duas casas decimais.
-- Depósitos, saques e transferências serão idempotentes por `Idempotency-Key`.
-- O número da conta possui 10 algarismos e um dígito verificador calculado pelo módulo 11.
-
 ## Executar localmente
 
 1. Inicie o PostgreSQL:
