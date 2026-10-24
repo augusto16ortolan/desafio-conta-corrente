@@ -1,9 +1,10 @@
 package com.example.financialaccount.api.account;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -11,9 +12,13 @@ import com.example.financialaccount.api.exception.GlobalExceptionHandler;
 import com.example.financialaccount.domain.account.AccountNumber;
 import com.example.financialaccount.domain.dto.AccountDto;
 import com.example.financialaccount.domain.dto.AccountMovementDto;
+import com.example.financialaccount.domain.dto.StatementDto;
 import com.example.financialaccount.domain.dto.TransferDto;
+import com.example.financialaccount.domain.exception.AccountNotFoundException;
+import com.example.financialaccount.domain.exception.AccountNumberGenerationException;
 import com.example.financialaccount.domain.exception.DuplicateIdentityNumberException;
 import com.example.financialaccount.domain.exception.IdempotencyKeyConflictException;
+import com.example.financialaccount.domain.exception.InsufficientBalanceException;
 import com.example.financialaccount.domain.identitynumber.IdentityNumber;
 import com.example.financialaccount.domain.movement.MovementType;
 import com.example.financialaccount.domain.service.AccountMovementService;
@@ -22,6 +27,7 @@ import com.example.financialaccount.domain.service.TransferService;
 import com.example.financialaccount.domain.service.StatementService;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -32,6 +38,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.data.web.PageableHandlerMethodArgumentResolver;
+import org.springframework.dao.TransientDataAccessResourceException;
 
 @ExtendWith(MockitoExtension.class)
 class AccountControllerTest {
@@ -131,6 +138,64 @@ class AccountControllerTest {
     }
 
     @Test
+    void withdrawsWithIdempotencyKey() throws Exception {
+        var accountId = UUID.randomUUID();
+        when(accountMovementService.withdraw(any())).thenReturn(new AccountMovementDto(
+                UUID.randomUUID(),
+                accountId,
+                MovementType.WITHDRAWAL,
+                new BigDecimal("5.00"),
+                new BigDecimal("10.00"),
+                Instant.parse("2026-10-23T18:00:00Z")));
+
+        mockMvc.perform(post("/api/accounts/{accountId}/withdrawals", accountId)
+                        .header("Idempotency-Key", "withdrawal-1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\":5.00}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.type").value("WITHDRAWAL"))
+                .andExpect(jsonPath("$.balanceAfter").value(10));
+    }
+
+    @Test
+    void returnsExpectedErrorsForAccountOperations() throws Exception {
+        var accountId = UUID.randomUUID();
+        when(accountMovementService.deposit(any())).thenThrow(new AccountNotFoundException(accountId));
+
+        mockMvc.perform(post("/api/accounts/{accountId}/deposits", accountId)
+                        .header("Idempotency-Key", "deposit-1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\":5.00}"))
+                .andExpect(status().isNotFound());
+
+        when(accountMovementService.withdraw(any())).thenThrow(new InsufficientBalanceException());
+        mockMvc.perform(post("/api/accounts/{accountId}/withdrawals", accountId)
+                        .header("Idempotency-Key", "withdrawal-1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\":5.00}"))
+                .andExpect(status().isUnprocessableContent());
+
+        doThrow(new TransientDataAccessResourceException("Banco indisponível"))
+                .when(accountMovementService)
+                .deposit(any());
+        mockMvc.perform(post("/api/accounts/{accountId}/deposits", accountId)
+                        .header("Idempotency-Key", "deposit-2")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\":5.00}"))
+                .andExpect(status().isServiceUnavailable());
+    }
+
+    @Test
+    void returnsServiceUnavailableWhenAccountNumberCannotBeGenerated() throws Exception {
+        when(accountOpeningService.open(any())).thenThrow(new AccountNumberGenerationException());
+
+        mockMvc.perform(post("/api/accounts")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"identityNumber\":\"529.982.247-25\"}"))
+                .andExpect(status().isServiceUnavailable());
+    }
+
+    @Test
     void transfersBetweenAccounts() throws Exception {
         var sourceAccountId = UUID.randomUUID();
         var destinationAccountId = UUID.randomUUID();
@@ -165,7 +230,7 @@ class AccountControllerTest {
     @Test
     void returnsStatementWithPaginationData() throws Exception {
         var accountId = UUID.randomUUID();
-        when(statementService.getStatement(any())).thenReturn(new com.example.financialaccount.domain.dto.StatementDto(
+        when(statementService.getStatement(any())).thenReturn(new StatementDto(
                 accountId,
                 AccountNumber.from("0000000001"),
                 new BigDecimal("70.00"),
@@ -175,7 +240,7 @@ class AccountControllerTest {
                 20,
                 1,
                 1,
-                java.util.List.of()));
+                List.of()));
 
         mockMvc.perform(get("/api/accounts/{accountId}/statement", accountId)
                         .param("page", "0")
@@ -184,5 +249,13 @@ class AccountControllerTest {
                 .andExpect(jsonPath("$.currentBalance").value(70))
                 .andExpect(jsonPath("$.totalElements").value(1))
                 .andExpect(jsonPath("$.movements").isEmpty());
+    }
+
+    @Test
+    void rejectsStatementWithPageSizeGreaterThanOneHundred() throws Exception {
+        var accountId = UUID.randomUUID();
+
+        mockMvc.perform(get("/api/accounts/{accountId}/statement", accountId).param("size", "101"))
+                .andExpect(status().isBadRequest());
     }
 }

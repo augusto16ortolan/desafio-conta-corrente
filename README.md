@@ -38,6 +38,14 @@ conta-corrente-api/     # Spring Boot, controllers, requests, responses, mappers
    ./gradlew test
    ```
 
+   Ao final da execução, o JaCoCo gera relatórios HTML e XML para cada módulo. Os relatórios HTML ficam em `conta-corrente-domain/build/reports/jacoco/test/html` e `conta-corrente-api/build/reports/jacoco/test/html`.
+
+   Para gerar apenas os relatórios de cobertura, execute:
+
+   ```bash
+   ./gradlew jacocoReport
+   ```
+
 As configurações locais podem ser sobrescritas por `DATABASE_URL`, `DATABASE_USERNAME` e `DATABASE_PASSWORD`.
 
 ## Rotas da API

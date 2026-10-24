@@ -92,6 +92,36 @@ class StatementServiceTest {
     }
 
     @Test
+    void appliesStartDateFilterToRepository() {
+        var account = accountWithBalance("10.00");
+        var startDate = Instant.parse("2026-10-23T00:00:00Z");
+        when(accountRepository.findById(account.getId())).thenReturn(Optional.of(account));
+        when(accountMovementRepository.findByAccountIdAndOccurredAtGreaterThanEqual(
+                        eq(account.getId()), eq(startDate), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
+
+        statementService.getStatement(new StatementInput(account.getId(), startDate, null, PageRequest.of(0, 20)));
+
+        verify(accountMovementRepository)
+                .findByAccountIdAndOccurredAtGreaterThanEqual(eq(account.getId()), eq(startDate), any(Pageable.class));
+    }
+
+    @Test
+    void appliesEndDateFilterToRepository() {
+        var account = accountWithBalance("10.00");
+        var endDate = Instant.parse("2026-10-23T23:59:59Z");
+        when(accountRepository.findById(account.getId())).thenReturn(Optional.of(account));
+        when(accountMovementRepository.findByAccountIdAndOccurredAtLessThanEqual(
+                        eq(account.getId()), eq(endDate), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
+
+        statementService.getStatement(new StatementInput(account.getId(), null, endDate, PageRequest.of(0, 20)));
+
+        verify(accountMovementRepository)
+                .findByAccountIdAndOccurredAtLessThanEqual(eq(account.getId()), eq(endDate), any(Pageable.class));
+    }
+
+    @Test
     void rejectsStatementForMissingAccount() {
         var accountId = java.util.UUID.randomUUID();
         when(accountRepository.findById(accountId)).thenReturn(Optional.empty());

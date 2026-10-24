@@ -96,6 +96,21 @@ class AccountMovementServiceTest {
     }
 
     @Test
+    void rejectsReusedIdempotencyKeyForDifferentMovementType() {
+        var account = accountWithBalance();
+        var existingMovement = AccountMovement.register(
+                account, MovementType.WITHDRAWAL, new MonetaryAmount(new BigDecimal("5.00")), "movement-1");
+        when(accountMovementRepository.findByAccountIdAndIdempotencyKey(account.getId(), "movement-1"))
+                .thenReturn(Optional.of(existingMovement));
+
+        assertThrows(
+                IdempotencyKeyConflictException.class,
+                () -> accountMovementService.deposit(input(account.getId(), "movement-1", "5.00")));
+
+        verifyNoInteractions(accountRepository);
+    }
+
+    @Test
     void rejectsWithdrawalWithoutSufficientBalance() {
         var account = accountWithBalance();
         var input = input(account.getId(), "withdrawal-1", "10.01");
@@ -106,6 +121,54 @@ class AccountMovementServiceTest {
         assertThrows(InsufficientBalanceException.class, () -> accountMovementService.withdraw(input));
 
         assertEquals(new BigDecimal("10.00"), account.getBalance());
+        verify(accountMovementRepository, never()).save(any());
+    }
+
+    @Test
+    void withdrawsAndRegistersMovement() {
+        var account = accountWithBalance();
+        var input = input(account.getId(), "withdrawal-1", "4.00");
+        when(accountMovementRepository.findByAccountIdAndIdempotencyKey(account.getId(), "withdrawal-1"))
+                .thenReturn(Optional.empty());
+        when(accountRepository.findByIdForUpdate(account.getId())).thenReturn(Optional.of(account));
+        when(accountMovementRepository.save(any(AccountMovement.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        var movement = accountMovementService.withdraw(input);
+
+        assertEquals(MovementType.WITHDRAWAL, movement.type());
+        assertEquals(new BigDecimal("6.00"), movement.balanceAfter());
+        assertEquals(new BigDecimal("6.00"), account.getBalance());
+    }
+
+    @Test
+    void returnsExistingMovementFoundAfterLock() {
+        var account = accountWithBalance();
+        var existingMovement = AccountMovement.register(
+                account, MovementType.DEPOSIT, new MonetaryAmount(new BigDecimal("5.00")), "deposit-1");
+        when(accountMovementRepository.findByAccountIdAndIdempotencyKey(account.getId(), "deposit-1"))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(existingMovement));
+        when(accountRepository.findByIdForUpdate(account.getId())).thenReturn(Optional.of(account));
+
+        var movement = accountMovementService.deposit(input(account.getId(), "deposit-1", "5.00"));
+
+        assertEquals(existingMovement.getId(), movement.id());
+        assertEquals(new BigDecimal("10.00"), account.getBalance());
+        verify(accountMovementRepository, never()).save(any());
+    }
+
+    @Test
+    void rejectsWithdrawalForMissingAccount() {
+        var accountId = UUID.randomUUID();
+        when(accountMovementRepository.findByAccountIdAndIdempotencyKey(accountId, "withdrawal-1"))
+                .thenReturn(Optional.empty());
+        when(accountRepository.findByIdForUpdate(accountId)).thenReturn(Optional.empty());
+
+        assertThrows(
+                AccountNotFoundException.class,
+                () -> accountMovementService.withdraw(input(accountId, "withdrawal-1", "1.00")));
+
         verify(accountMovementRepository, never()).save(any());
     }
 
